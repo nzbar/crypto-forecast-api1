@@ -1,0 +1,12 @@
+# requirements.txt - for Flask API deployment
+
+# Web Server
+Flask
+gunicorn
+
+# Data & ML Model
+pandas==1.5.0
+numpy==1.23.3
+scikit-learn==1.1.2
+torch
+torchvision==0.16.1
