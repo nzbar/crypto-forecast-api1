@@ -1,0 +1,36 @@
+# render.yaml
+# هذا الملف يصف البنية التحتية لتطبيقك على Render
+
+services:
+  # تعريف خدمة الويب الأساسية
+  - type: web
+    # اسم الخدمة (يمكنك تغييره)
+    name: crypto-forecast-api
+    # بيئة التشغيل، في حالتنا هي Docker
+    env: docker
+    # اسم الفرع (Branch) الذي سيتم النشر منه
+    repo: https://github.com/nzbar/crypto-forecast-api1.git # تأكد من أن هذا هو رابط مستودعك
+    branch: main
+    # الخطة التي سيتم استخدامها. 'free' للخطة المجانية
+    plan: free
+    # مسار فحص الصحة الذي أنشأناه
+    healthCheckPath: /health
+    # متغيرات البيئة
+    envVars:
+      - key: PYTHONUNBUFFERED # لضمان ظهور مخرجات print في السجلات مباشرة
+        value: 1
+      # ملاحظة: Render يوفر متغير PORT تلقائياً، لذلك لا حاجة لتعريفه هنا
+      # سيقوم Gunicorn باستخدامه لأننا عدلنا Dockerfile ليشير إلى $PORT
+
+# يمكنك إضافة خدمات أخرى هنا في المستقبل، مثل قاعدة بيانات أو وظيفة مجدولة
+#  - type: cron
+#    name: daily-prediction-job
+#    schedule: "0 0 * * *" # مرة كل يوم عند منتصف الليل
+#    command: "python your_script.py"
+
+#  - type: pserv
+#    name: postgres-db
+#    plan: free
+#    ipAllowList: [] # Allow all
+#    postgres:
+#      version: 15
