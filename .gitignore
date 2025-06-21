@@ -1,23 +1,24 @@
-@'
-# Python cache and virtual environment
+# .gitignore (النسخة النهائية والموصى بها)
+
+# تجاهل مجلدات البيئة الافتراضية
+venv/
+.venv/
+env/
+ENV/
+
+# تجاهل ملفات بايثون المؤقتة
 __pycache__/
 *.pyc
-venv/
-.env
+*.pyo
+*.pyd
 
-# Data, models, and outputs
-models/
-*.pth
-*.csv
-*.json
-predictions_*.txt
-
-# IDE and OS specific
-.vscode/
-.idea/
+# تجاهل الملفات التي ينشئها نظام التشغيل
 .DS_Store
 
-# Accidental files
-dict
-float
-'@ | Set-Content -Path .gitignore
+# تجاهل مجلدات النسخ الاحتياطية
+النسخ الاصلية/
+src/النسخ الاصلية/
+
+# تجاهل ملفات الإعدادات المحلية للمحررات
+.vscode/
+.idea/
