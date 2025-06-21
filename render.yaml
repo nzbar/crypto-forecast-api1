@@ -1,36 +1,35 @@
 # render.yaml
-# هذا الملف يصف البنية التحتية لتطبيقك على Render
 
 services:
-  # تعريف خدمة الويب الأساسية
+  # --- خدمة الويب (API) الحالية - لا تغيير هنا ---
   - type: web
-    # اسم الخدمة (يمكنك تغييره)
     name: crypto-forecast-api
-    # بيئة التشغيل، في حالتنا هي Docker
     env: docker
-    # اسم الفرع (Branch) الذي سيتم النشر منه
-    repo: https://github.com/nzbar/crypto-forecast-api1.git # تأكد من أن هذا هو رابط مستودعك
+    repo: https://github.com/nzbar/crypto-forecast-api1.git
     branch: main
-    # الخطة التي سيتم استخدامها. 'free' للخطة المجانية
     plan: free
-    # مسار فحص الصحة الذي أنشأناه
     healthCheckPath: /health
-    # متغيرات البيئة
-    envVars:
-      - key: PYTHONUNBUFFERED # لضمان ظهور مخرجات print في السجلات مباشرة
-        value: 1
-      # ملاحظة: Render يوفر متغير PORT تلقائياً، لذلك لا حاجة لتعريفه هنا
-      # سيقوم Gunicorn باستخدامه لأننا عدلنا Dockerfile ليشير إلى $PORT
+    # ربط القرص الصلب الدائم بخدمة الويب أيضاً
+    disks:
+      - name: models-disk # استخدم نفس اسم القرص
+        mountPath: /data
 
-# يمكنك إضافة خدمات أخرى هنا في المستقبل، مثل قاعدة بيانات أو وظيفة مجدولة
-#  - type: cron
-#    name: daily-prediction-job
-#    schedule: "0 0 * * *" # مرة كل يوم عند منتصف الليل
-#    command: "python your_script.py"
+  # --- الخدمة الجديدة المجدولة (Cron Job) ---
+  - type: cron
+    name: model-trainer # اسم الخدمة الجديدة
+    env: docker
+    # جدول التشغيل: هذا المثال يعمل كل يوم اثنين الساعة 1 صباحاً بتوقيت UTC
+    schedule: "0 1 * * 1" 
+    # الأمر الذي سيتم تشغيله
+    command: python train_worker.py
+    plan: free # يمكن تشغيله على الخطة المجانية
+    # ربط نفس القرص الصلب بهذه الخدمة لتتمكن من حفظ النماذج
+    disks:
+      - name: models-disk # يجب أن يكون نفس اسم القرص المستخدم في خدمة الويب
+        mountPath: /data
 
-#  - type: pserv
-#    name: postgres-db
-#    plan: free
-#    ipAllowList: [] # Allow all
-#    postgres:
-#      version: 15
+# --- تعريف القرص الصلب الدائم ---
+# هذا التعريف مشترك بين الخدمتين
+disks:
+  - name: models-disk # اسم القرص
+    sizeGB: 1
