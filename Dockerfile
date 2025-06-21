@@ -19,5 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # الخطوة 5: تشغيل الخادم
-EXPOSE 8000
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+#EXPOSE 8000
+#CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+
+# السطر الجديد والمحسن (يستخدم متغير البيئة PORT):
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "app:app"]

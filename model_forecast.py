@@ -1,21 +1,22 @@
-# model_forecast.py
+# model_forecast.py (النسخة النهائية والمصححة)
 
 import pandas as pd
 import json
 import torch
 from pretrain.gru import GRU
 from pretrain.lstm import LSTM
-from statsmodels.tsa.holtwinters import Holt
 from sklearn.preprocessing import MinMaxScaler
 import warnings
 
+# تجاهل التحذيرات غير الهامة
 warnings.filterwarnings("ignore")
+
+# تحديد الجهاز (سيكون 'cpu' في بيئة Docker التي أنشأناها)
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def load_prediction_assets(config_path, features_path, model_path, model_type, valid_data_path, target_coin):
     """
-    تحميل جميع الأصول اللازمة للتنبؤ مرة واحدة.
-    هذه الدالة تُستدعى مرة واحدة فقط عند بدء تشغيل الخادم.
+    تحميل جميع الأصول اللازمة للتنبؤ مرة واحدة عند بدء تشغيل الخادم.
     """
     print("Loading prediction assets...")
     
@@ -29,18 +30,23 @@ def load_prediction_assets(config_path, features_path, model_path, model_type, v
         n_features=len(features),
         hidden_units=config['hidden_units'],
         n_layers=config['n_layers'],
-        lr=config['learning_rate']
     )
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     model.to(DEVICE)
-    model.eval()
+    model.eval()  # وضع النموذج في وضع التقييم (مهم جداً)
     
     # تحميل بيانات التحقق لتهيئة المحجمات (Scalers)
     valid_df = pd.read_csv(valid_data_path, index_col='Date', parse_dates=True)
     target_col_name = f"{target_coin.lower()}_avg_ohlc"
     
+    # التأكد من وجود كل الأعمدة قبل تهيئة المحجمات
+    all_required_cols = features + [target_col_name]
+    if not all(col in valid_df.columns for col in all_required_cols):
+        missing_cols = set(all_required_cols) - set(valid_df.columns)
+        raise ValueError(f"ملف بيانات التحقق 'valid.csv' تنقصه الأعمدة التالية: {missing_cols}")
+
     # تهيئة المحجمات
-    main_scaler = MinMaxScaler().fit(valid_df[features + [target_col_name]])
+    main_scaler = MinMaxScaler().fit(valid_df[all_required_cols])
     target_only_scaler = MinMaxScaler().fit(valid_df[[target_col_name]])
     
     print("Assets loaded successfully.")
@@ -52,50 +58,64 @@ def load_prediction_assets(config_path, features_path, model_path, model_type, v
         "features": features,
         "main_scaler": main_scaler,
         "target_only_scaler": target_only_scaler,
-        "valid_df": valid_df, # سنحتاجها للحصول على آخر تسلسل
         "target_col_name": target_col_name
     }
 
-def make_prediction(assets, horizon=7):
+def make_prediction(assets, input_data):
     """
-    تقوم بعملية التنبؤ باستخدام الأصول المحملة مسبقًا.
-    هذه الدالة سريعة ويمكن استدعاؤها مع كل طلب API.
+    تقوم بعملية التنبؤ بناءً على بيانات التسلسل التي يتم إرسالها مباشرة في الطلب.
     """
-    # استخراج الأصول من القاموس
-    model = assets['model']
-    valid_df = assets['valid_df']
-    features = assets['features']
-    config = assets['config']
-    main_scaler = assets['main_scaler']
-    target_only_scaler = assets['target_only_scaler']
-    target_col_name = assets['target_col_name']
+    # نضع كل الكود في كتلة try واحدة لمعالجة أي خطأ بشكل آمن
+    try:
+        # --- 1. استخراج الأصول اللازمة ---
+        model = assets['model']
+        features = assets['features']
+        main_scaler = assets['main_scaler']
+        target_only_scaler = assets['target_only_scaler']
+        target_col_name = assets['target_col_name']
 
-    # 1. توقع الميزات المستقبلية باستخدام Holt
-    pred_set = pd.DataFrame()
-    for feature in features:
-        holt = Holt(valid_df[feature], initialization_method="estimated").fit()
-        pred = holt.forecast(horizon)
-        pred_set = pd.concat([pred_set, pred], axis=1)
-    pred_set.columns = features
+        # --- 2. التحقق من هيكل الطلب الأساسي ---
+        if 'sequence' not in input_data or not isinstance(input_data['sequence'], list) or not input_data['sequence']:
+            raise ValueError("البيانات المرسلة يجب أن تكون كائن JSON يحتوي على مفتاح 'sequence' وقيمته قائمة غير فارغة.")
 
-    # 2. الحصول على آخر تسلسل من البيانات
-    sequence_length = config.get('sequence_length', 60)
-    last_sequence_unscaled = valid_df[features].iloc[-sequence_length:]
-    
-    # 3. دمج التسلسل الأخير مع الميزات المتوقعة
-    full_sequence_unscaled = pd.concat([last_sequence_unscaled, pred_set]).iloc[-sequence_length:]
-    
-    # 4. تحجيم (Scale) التسلسل
-    full_sequence_scaled = main_scaler.transform(pd.concat([full_sequence_unscaled, pd.DataFrame(columns=[target_col_name])]))[:, :len(features)]
-    
-    # 5. إجراء التنبؤ
-    with torch.no_grad():
-        input_tensor = torch.tensor(full_sequence_scaled, dtype=torch.float).unsqueeze(0).to(DEVICE)
-        y_hat = model(input_tensor)
+        input_sequence = input_data['sequence']
 
-    # 6. عكس التحجيم للحصول على القيمة الحقيقية
-    prediction_scaled = y_hat.cpu().numpy().flatten()
-    final_forecast = target_only_scaler.inverse_transform(prediction_scaled.reshape(-1, 1)).flatten()
+        # --- 3. تحويل البيانات المدخلة إلى DataFrame والتحقق من الميزات ---
+        input_df = pd.DataFrame(input_sequence)
+        
+        required_features = set(features)
+        provided_features = set(input_df.columns)
+        
+        if not required_features.issubset(provided_features):
+            missing = sorted(list(required_features - provided_features))
+            error_message = f"التسلسل المرسل تنقصه الميزات المطلوبة: {missing}"
+            raise ValueError(error_message)
 
-    # 7. إرجاع النتيجة
-    return float(final_forecast[0])
+        # --- 4. تحجيم (Scale) بيانات الإدخال ---
+        # نستخدم .copy() لتجنب التحذيرات، ونرتب الأعمدة لضمان تطابقها مع المحجم
+        sequence_for_scaling = input_df[features].copy()
+        sequence_for_scaling.loc[:, target_col_name] = 0
+        
+        # التأكد من أن ترتيب الأعمدة مطابق تماماً لما تم تدريب المحجم عليه
+        ordered_columns = features + [target_col_name]
+        sequence_for_scaling = sequence_for_scaling[ordered_columns]
+        
+        scaled_sequence = main_scaler.transform(sequence_for_scaling)[:, :len(features)]
+
+        # --- 5. إجراء التنبؤ ---
+        with torch.no_grad():
+            input_tensor = torch.tensor(scaled_sequence, dtype=torch.float).unsqueeze(0).to(next(model.parameters()).device)
+            y_hat = model(input_tensor)
+
+        # --- 6. عكس التحجيم (Inverse Scale) ---
+        prediction_scaled = y_hat.cpu().numpy().flatten()
+        final_forecast = target_only_scaler.inverse_transform(prediction_scaled.reshape(-1, 1)).flatten()
+
+        # --- 7. إرجاع النتيجة النهائية ---
+        return float(final_forecast[0])
+
+    except Exception as e:
+        # التقاط أي خطأ يحدث في أي خطوة أعلاه وطباعته في سجل الخادم
+        print(f"ERROR in make_prediction: An exception occurred: {e}")
+        # نطلق الخطأ مرة أخرى ليتم التقاطه بواسطة معالج أخطاء Flask ويعيد رسالة 500
+        raise e

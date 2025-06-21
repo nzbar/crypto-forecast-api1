@@ -1,66 +1,109 @@
 # app.py
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
+# افترض أن دوالك موجودة في model_forecast.py
 from model_forecast import load_prediction_assets, make_prediction
-import os
+import logging
 
-# --- الإعدادات الأساسية (تم تحديثها لتناسب هيكل ملفاتك) ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# 1. تحديث مسار ملف الإعدادات إلى الاسم الصحيح: config_nn.json
-CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'config_nn.json')
-
-# 2. مسار ملف الميزات صحيح، لا داعي للتغيير
-FEATURES_PATH = os.path.join(BASE_DIR, 'config', 'features.json')
-
-# 3. مسار النموذج صحيح بناءً على آخر تعديل
-MODEL_PATH = os.path.join(BASE_DIR, 'models', 'lstm_16062025.pth')
-
-# 4. تحديث مسار ملف التحقق: الملف موجود في المجلد الرئيسي ومختلف الاسم
-VALID_DATA_PATH = os.path.join(BASE_DIR, 'valid_16062025.csv')
-
-# 5. نوع النموذج صحيح بناءً على آخر تعديل
-TARGET_COIN = 'btc' # الرجاء التأكد من أن هذا هو اسم العملة الصحيح الذي تستهدفه
-MODEL_TYPE = 'lstm'
-
-# --- تهيئة التطبيق وتحميل الأصول ---
+# --- إعداد التطبيق ---
 app = Flask(__name__)
+# إعداد تسجيل الأخطاء (Logging)
+logging.basicConfig(level=logging.INFO)
 
-# تحميل الأصول مرة واحدة عند بدء تشغيل الخادم وتخزينها في متغير
+# --- تحميل أصول النموذج عند بدء التشغيل ---
+# هذا الجزء يحتاج إلى تعديل ليتناسب مع كيفية تحميل ملفاتك
+# سنستخدم try-except للتعامل مع فشل التحميل عند البدء
 try:
-    prediction_assets = load_prediction_assets(
-        config_path=CONFIG_PATH,
-        features_path=FEATURES_PATH,
-        model_path=MODEL_PATH,
-        model_type=MODEL_TYPE,
-        valid_data_path=VALID_DATA_PATH,
-        target_coin=TARGET_COIN
-    )
-except FileNotFoundError as e:
-    print(f"Error loading assets: {e}. Make sure all paths are correct.")
-    prediction_assets = None # Handle case where loading fails
-except Exception as e:
-    print(f"An unexpected error occurred during asset loading: {e}")
-    prediction_assets = None
+    # يجب أن توفر المسارات الصحيحة هنا
+    # هذه مجرد أمثلة
+    CONFIG_PATH = 'config/config_nn.json'
+    FEATURES_PATH = 'config/features.json' # افترضنا وجود هذا الملف
+    MODEL_PATH = 'models/lstm_16062025.pth'
+    VALID_DATA_PATH = 'valid_16062025.csv'
+    MODEL_TYPE = 'lstm'
+    TARGET_COIN = 'btc'
+    
+    # تحميل كل شيء في متغير عام واحد
+    assets = load_prediction_assets(CONFIG_PATH, FEATURES_PATH, MODEL_PATH, MODEL_TYPE, VALID_DATA_PATH, TARGET_COIN)
+    app.logger.info("--- Model assets loaded successfully! ---")
 
-# --- تحديد رابط الـ API ---
-@app.route('/predict', methods=['GET'])
+except Exception as e:
+    app.logger.error(f"FATAL: Could not load model assets on startup: {e}")
+    assets = None # للدلالة على أن التحميل فشل
+
+
+# --- نقاط النهاية (Endpoints) ---
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """نقطة نهاية للتحقق من صحة الخدمة."""
+    # إذا لم يتم تحميل الأصول، تعتبر الخدمة غير صحية
+    if assets is None:
+        return jsonify({"status": "unhealthy", "message": "Model assets failed to load."}), 503
+    return jsonify({"status": "ok", "message": "Service is running and assets are loaded."}), 200
+
+@app.route('/info', methods=['GET'])
+def model_info():
+    """إرجاع معلومات عن النموذج المستخدم حالياً."""
+    if assets and 'model_info' in assets:
+        return jsonify(assets['model_info']), 200
+    else:
+        # Service Unavailable
+        return jsonify({"error": "Information not available", "message": "Model assets might not be loaded."}), 503
+
+@app.route('/predict', methods=['POST'])
 def handle_prediction():
-    if prediction_assets is None:
-        return jsonify({'error': 'Prediction assets could not be loaded. Check server logs.'}), 500
+    """نقطة النهاية الرئيسية لعمل التنبؤ."""
+    # التأكد من أن الأصول تم تحميلها
+    if assets is None:
+        return jsonify({"error": "Service Unavailable", "message": "The prediction service is not ready. Model assets failed to load."}), 503
+        
+    # التحقق من المدخلات
+    if not request.is_json:
+        abort(400, description="Invalid request format. Expecting a JSON body.")
+
+    data = request.get_json()
+    # يمكنك إضافة المزيد من التحققات هنا، مثلاً على نوع البيانات أو نطاقها
+    # ...
 
     try:
-        forecasted_price = make_prediction(prediction_assets)
-        
-        return jsonify({
-            'status': 'success',
-            'predicted_price': f'{forecasted_price:.2f}'
-        })
+        # افترض أن make_prediction تستقبل القاموس assets والبيانات data
+        prediction = make_prediction(assets=assets, input_data=data)
+        return jsonify({"prediction": prediction})
 
+    except KeyError as e:
+        # في حال كان حقل مطلوب غير موجود في الـ JSON
+        abort(400, description=f"Missing required field in request: {e}")
     except Exception as e:
-        app.logger.error(f"An error occurred during prediction: {e}")
-        return jsonify({'error': 'An internal error occurred during prediction.'}), 500
+        app.logger.error(f"An unexpected error occurred during prediction: {e}")
+        # خطأ خادم داخلي عام
+        abort(500)
+
+
+# --- معالجات الأخطاء (Error Handlers) ---
+
+@app.errorhandler(400)
+def bad_request(error):
+    """معالج مخصص لخطأ 400 (طلب سيئ)."""
+    return jsonify({"error": "Bad Request", "message": error.description or "Invalid data received."}), 400
+
+@app.errorhandler(404)
+def not_found(error):
+    """معالج مخصص لخطأ 404 (غير موجود)."""
+    return jsonify({"error": "Not Found", "message": "This resource does not exist."}), 404
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    """معالج مخصص لخطأ 500 (خطأ داخلي في الخادم)."""
+    return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred on our end."}), 500
+
+@app.errorhandler(503)
+def service_unavailable(error):
+    """معالج مخصص لخطأ 503 (خدمة غير متوفرة)."""
+    return jsonify({"error": "Service Unavailable", "message": error.description or "The service is not ready to handle requests."}), 503
+
 
 # --- تشغيل التطبيق ---
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # هذا السطر للتشغيل المحلي فقط، Gunicorn هو من سيقوم بالتشغيل داخل Docker
+    app.run(debug=True, port=5000)

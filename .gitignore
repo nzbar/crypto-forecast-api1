@@ -1,0 +1,23 @@
+@'
+# Python cache and virtual environment
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Data, models, and outputs
+models/
+*.pth
+*.csv
+*.json
+predictions_*.txt
+
+# IDE and OS specific
+.vscode/
+.idea/
+.DS_Store
+
+# Accidental files
+dict
+float
+'@ | Set-Content -Path .gitignore
