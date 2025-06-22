@@ -109,6 +109,26 @@ def run_training_job():
     # --- 3. الانتهاء ---
     print(f"[3/3] اكتمل التدريب! تم حفظ أفضل نموذج في: {checkpoint_callback.best_model_path}")
     print("\n✅ نجحت مهمة التدريب المجدولة!")
+# train_worker.py -> inside run_training_job()
+
+# ... (كود التدريب trainer.fit(...))
+
+# --- 4. الإعلان عن النموذج الجديد ---
+# التحقق من أن التدريب نجح وأن هناك نموذج جديد تم حفظه
+if checkpoint_callback.best_model_path:
+    best_model_filename = os.path.basename(checkpoint_callback.best_model_path)
+    latest_model_info_path = os.path.join(MODEL_OUTPUT_DIR, 'latest.txt')
+
+    print(f"[4/4] تحديث ملف 'latest.txt' ليشير إلى النموذج الجديد: {best_model_filename}")
+
+    # كتابة اسم الملف الجديد في الملف الوسيط
+    with open(latest_model_info_path, 'w') as f:
+        f.write(best_model_filename)
+
+    print("\n✅ نجحت مهمة التدريب المجدولة وتم تحديث مؤشر أحدث نموذج!")
+else:
+    print("\n❌ فشل التدريب أو لم يتم حفظ أي نموذج جديد.")
+
 
 if __name__ == "__main__":
     run_training_job()
