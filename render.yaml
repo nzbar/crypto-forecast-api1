@@ -31,5 +31,5 @@ services:
 # --- تعريف القرص الصلب الدائم ---
 # هذا التعريف مشترك بين الخدمتين
 disks:
-  - name: models-disk # اسم القرص
+  - name: models-disk # اسم القرص 2
     sizeGB: 1
