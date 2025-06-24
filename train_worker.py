@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import os
 
 # استيراد دوالك ونماذجك
-# ملاحظة: تأكد من أن هذه الملفات تحتوي على النسخ الأصلية المناسبة للتدريب
+# ملاحظة: تأكد من ان هذه الملفات تحتوي على النسخ الأصلية المناسبة للتدريب
 from data_pull import fetch_crypto_data_from_coingecko
 from feature_engineering import create_features
 from pretrain.lstm import LSTM # النسخة التي ترث من pl.LightningModule

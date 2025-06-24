@@ -98,7 +98,7 @@ def handle_prediction():
         return jsonify({"prediction": prediction})
 
     except ValueError as e:
-        # التقاط أخطاء البيانات المرسلة بشكل واضح
+        # التقاط اخطاء البيانات المرسلة بشكل واضح
         abort(400, description=str(e))
     except Exception as e:
         app.logger.error(f"An unexpected error occurred during prediction: {e}")
